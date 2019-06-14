@@ -1,8 +1,8 @@
 from multiprocessing import Manager
 from multiprocessing import Process
 from imutils.video import VideoStream
-from pyimagesearch.objcenter import ObjCenter
-from pyimagesearch.pid import PID
+from core.objcenter import ObjCenter
+from core.pid import PID
 import pantilthat as pth
 import argparse
 import signal
@@ -15,76 +15,59 @@ import cv2
 servoRange = (-85, 85)
 
 def signal_handler(sig, frame):
-	print("[INFO] You pressed `ctrl + c`! Exiting...")
-	pth.servo_enable(1, False)
-	pth.servo_enable(2, False)
-	sys.exit()
-
+    print("[INFO] You pressed `ctrl + c`! Exiting...")
+    pth.servo_enable(1, False)
+    pth.servo_enable(2, False)
+    sys.exit()
 
 def obj_center(args, objX, objY, centerX, centerY):
-	signal.signal(signal.SIGINT, signal_handler)
+    signal.signal(signal.SIGINT, signal_handler)
+    vs = VideoStream(usePiCamera=True).start()
+    time.sleep(2.0) 
+    # initialize the object center finder
+    obj = ObjCenter(args["cascade"])    
+    # loop indefinitely
+    while True:
+        # grab the frame from the threaded video stream and flip it
+        # vertically (since our camera was upside down)
+        frame = vs.read()
+        frame = cv2.flip(frame, 0)      
+        # calculate the center of the frame as this is where we will
+        # try to keep the object
+        (H, W) = frame.shape[:2]
+        centerX.value = W // 2
+        centerY.value = H // 2      
+        # find the object's location
+        objectLoc = obj.update(frame, (centerX.value, centerY.value))
+        ((objX.value, objY.value), rect) = objectLoc        
+        # extract the bounding box and draw it
+        if rect is not None:
+            (x, y, w, h) = rect
+            cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
 
-	# start the video stream and wait for the camera to warm up
-	vs = VideoStream(usePiCamera=True).start()
-	time.sleep(2.0)
-
-	# initialize the object center finder
-	obj = ObjCenter(args["cascade"])
-
-	# loop indefinitely
-	while True:
-		# grab the frame from the threaded video stream and flip it
-		# vertically (since our camera was upside down)
-		frame = vs.read()
-		frame = cv2.flip(frame, 0)
-
-		# calculate the center of the frame as this is where we will
-		# try to keep the object
-		(H, W) = frame.shape[:2]
-		centerX.value = W // 2
-		centerY.value = H // 2
-
-		# find the object's location
-		objectLoc = obj.update(frame, (centerX.value, centerY.value))
-		((objX.value, objY.value), rect) = objectLoc
-
-		# extract the bounding box and draw it
-		if rect is not None:
-			(x, y, w, h) = rect
-			cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0),
-				2)
-
-		# display the frame to the screen
-		cv2.imshow("Pan-Tilt Face Tracking", frame)
-		cv2.waitKey(1)
-
+        cv2.imshow("Pan-Tilt Face Tracking", frame)
+        cv2.waitKey(1)
 
 def pid_process(output, p, i, d, objCoord, centerCoord):
-	# signal trap to handle keyboard interrupt
-	signal.signal(signal.SIGINT, signal_handler)
-
-	# create a PID and initialize it
-	p = PID(p.value, i.value, d.value)
-	p.initialize()
-
-	# loop indefinitely
-	while True:
-		# calculate the error
-		error = centerCoord.value - objCoord.value
-
-		# update the value
-		output.value = p.update(error)
+    # signal trap to handle keyboard interrupt
+    signal.signal(signal.SIGINT, signal_handler)    
+    # create a PID and initialize it
+    p = PID(p.value, i.value, d.value)
+    p.initialize()  
+    # loop indefinitely
+    while True:
+        error = centerCoord.value - objCoord.value
+        output.value = p.update(error)
 
 def in_range(val, start, end):
-	# determine the input value is in the supplied range
-	return (val >= start and val <= end)
+    # determine the input value is in the supplied range
+    return (val >= start and val <= end)
 
 def set_servos(pan, tlt):
-	# signal trap to handle keyboard interrupt
-	signal.signal(signal.SIGINT, signal_handler)
-
-	# loop indefinitely
-	while True:
+    # signal trap to handle keyboard interrupt
+    signal.signal(signal.SIGINT, signal_handler)
+    # loop indefinitely
+    while True:
 		# the pan and tilt angles are reversed
 		panAngle = -1 * pan.value
 		tiltAngle = -1 * tlt.value
